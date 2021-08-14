@@ -14,6 +14,9 @@ import formatValue from '../../utils/formatValue';
 
 import api from '../../services/api';
 
+type Omit<T, K extends keyof T> = Pick<T, Exclude<keyof T, K>>
+type PartialBy<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>
+
 import {
   Container,
   Header,
@@ -73,34 +76,96 @@ const FoodDetails: React.FC = () => {
 
   useEffect(() => {
     async function loadFood(): Promise<void> {
-      // Load a specific food with extras based on routeParams id
+      try {
+        const { data } = await api.get<Food>(`/foods/${routeParams.id}`);
+        const foodExtras = data.extras.map(i => { i.quantity = 0; return i; });
+
+        setFood(data);
+        setExtras(foodExtras);
+      }
+      catch {
+        console.log(`Error on fetch API`);
+      }
+    }
+
+    loadFood();
+  }, [routeParams]);
+
+  useEffect(() => {
+    async function loadFood(): Promise<void> {
+      try {
+        const favorites = await api.get<Omit<Food, 'extras'>[]>(`favorites?id=${routeParams.id}`);
+        setIsFavorite(!!favorites.data.length);
+      }
+      catch {
+        console.log(`Error on fetch API`);
+      }
     }
 
     loadFood();
   }, [routeParams]);
 
   function handleIncrementExtra(id: number): void {
-    // Increment extra quantity
+    setExtras(oldData => {
+      const index = oldData.findIndex(i => i.id === id);
+      const newData = [...oldData];
+
+      newData[index].quantity += 1;
+      return newData;
+    });
   }
 
   function handleDecrementExtra(id: number): void {
-    // Decrement extra quantity
+    setExtras(oldData => {
+      const index = oldData.findIndex(i => i.id === id);
+      const newData = [...oldData];
+
+      if (newData[index].quantity === 0) {
+        return newData;
+      }
+
+      newData[index].quantity -= 1;
+      return newData;
+    });
   }
 
   function handleIncrementFood(): void {
-    // Increment food quantity
+    setFoodQuantity(oldQuantity => oldQuantity + 1);
   }
 
   function handleDecrementFood(): void {
-    // Decrement food quantity
+    setFoodQuantity(oldQuantity => {
+      if (oldQuantity === 1) {
+        return oldQuantity;
+      }
+
+      return oldQuantity - 1
+    });
   }
 
-  const toggleFavorite = useCallback(() => {
-    // Toggle if food is favorite or not
+  const toggleFavorite = useCallback(async () => {
+    try {
+      setIsFavorite(!isFavorite);
+
+      if (!isFavorite) {
+        const foodToFavorite: PartialBy<Food, 'extras'> = food;
+        delete foodToFavorite.extras;
+
+        await api.post<Food>(`/favorites`, foodToFavorite);
+      } else {
+        await api.delete<Food>(`/favorites/${food.id}`);
+      }
+    }
+    catch {
+      console.log(`Error on fetch API`);
+    }
   }, [isFavorite, food]);
 
   const cartTotal = useMemo(() => {
-    // Calculate cartTotal
+    const extrasPrice = extras.reduce((a, extra) => a + extra.value * extra.quantity, 0);
+    const partialPrice = food.price + extrasPrice;
+
+    return formatValue(partialPrice * foodQuantity);
   }, [extras, food, foodQuantity]);
 
   async function handleFinishOrder(): Promise<void> {
